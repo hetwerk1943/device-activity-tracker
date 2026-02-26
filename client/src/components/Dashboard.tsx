@@ -3,6 +3,8 @@ import {Eye, EyeOff, Plus, Trash2, Zap, MessageCircle, Settings} from 'lucide-re
 import { socket, Platform, ConnectionState } from '../App';
 import { ContactCard } from './ContactCard';
 import { Login } from './Login';
+import { AdBanner } from './AdBanner';
+import { AD_SLOTS } from '../adsConfig';
 
 type ProbeMethod = 'delete' | 'reaction';
 
@@ -348,6 +350,9 @@ export function Dashboard({ connectionState }: DashboardProps) {
             {showConnections && (
                 <Login connectionState={connectionState} />
             )}
+
+            {/* Inline ad banner between controls and contact list */}
+            <AdBanner slot={AD_SLOTS.inline} />
 
             {/* Contact Cards */}
             {contacts.size === 0 ? (

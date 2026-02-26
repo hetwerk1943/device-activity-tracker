@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { Login } from './components/Login';
 import { Dashboard } from './components/Dashboard';
+import { AdBanner } from './components/AdBanner';
+import { AD_SLOTS } from './adsConfig';
 
 // Create socket with autoConnect disabled so we can add listeners before connecting
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
@@ -130,6 +132,8 @@ function App() {
                 </header>
 
                 <main>
+                    {/* Header ad banner */}
+                    <AdBanner slot={AD_SLOTS.header} className="mb-6" />
                     {!isAnyPlatformReady ? (
                         <Login connectionState={connectionState} />
                     ) : (
