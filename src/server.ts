@@ -20,13 +20,18 @@ import { SignalTracker, getSignalAccounts, checkSignalNumber } from './signal-tr
 // Configuration
 const SIGNAL_API_URL = process.env.SIGNAL_API_URL || 'http://localhost:8080';
 
+// Set ALLOWED_ORIGIN in production (comma-separated list for multiple origins, e.g. "https://app.example.com,https://www.example.com")
+const allowedOrigins: string | string[] = process.env.ALLOWED_ORIGIN
+    ? process.env.ALLOWED_ORIGIN.split(',').map(o => o.trim())
+    : 'http://localhost:3000';
+
 const app = express();
-app.use(cors());
+app.use(cors({ origin: allowedOrigins }));
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
     cors: {
-        origin: "*", // Allow all origins for dev
+        origin: allowedOrigins,
         methods: ["GET", "POST"]
     }
 });

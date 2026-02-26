@@ -58,7 +58,7 @@ class TrackerLogger {
     }
 }
 
-const logger = new TrackerLogger(true);
+const logger = new TrackerLogger(false);
 
 export class SignalTracker {
     private apiUrl: string;
