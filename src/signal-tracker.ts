@@ -67,6 +67,7 @@ export class SignalTracker {
     private isTracking: boolean = false;
     private deviceMetrics: Map<string, DeviceMetrics> = new Map();
     private globalRttHistory: number[] = [];
+    private cachedGlobalMedian: number = 0; // Cached to avoid repeated sorting
     private probeMethod: ProbeMethod = 'reaction';
     private ws: WebSocket | null = null;
     private reconnectTimeout: NodeJS.Timeout | null = null;
@@ -383,6 +384,8 @@ export class SignalTracker {
             if (this.globalRttHistory.length > 2000) {
                 this.globalRttHistory.shift();
             }
+            // Update cached median once after modifying global history
+            this.cachedGlobalMedian = this.calculateGlobalMedian();
 
             metrics.lastRtt = rtt;
             metrics.lastUpdate = Date.now();
@@ -411,9 +414,7 @@ export class SignalTracker {
         let threshold = 0;
 
         if (this.globalRttHistory.length >= 3) {
-            const sorted = [...this.globalRttHistory].sort((a, b) => a - b);
-            const mid = Math.floor(sorted.length / 2);
-            median = sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+            median = this.cachedGlobalMedian;
             threshold = median * 0.9;
 
             if (movingAvg < threshold) {
@@ -439,7 +440,7 @@ export class SignalTracker {
                 : 0
         }));
 
-        const globalMedian = this.calculateGlobalMedian();
+        const globalMedian = this.cachedGlobalMedian;
         const globalThreshold = globalMedian * 0.9;
 
         const data = {
