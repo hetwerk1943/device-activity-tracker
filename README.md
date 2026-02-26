@@ -186,4 +186,4 @@ Built with [@whiskeysockets/baileys](https://github.com/WhiskeySockets/Baileys)
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=gommzystudio/device-activity-tracker&type=date&legend=top-left)](https://www.star-history.com/#gommzystudio/device-activity-tracker&type=date&legend=top-left)
+[![Star History Chart](https://api.star-history.com/svg?repos=hetwerk1943/device-activity-tracker&type=date&legend=top-left)](https://www.star-history.com/#hetwerk1943/device-activity-tracker&type=date&legend=top-left)
