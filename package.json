@@ -32,6 +32,7 @@
     "start:signal-api": "npx tsx src/scripts/init-signal.ts",
     "start:client": "cd client && npm start",
     "dev": "npm run start:server",
+    "test": "node --import tsx --test src/__tests__/*.test.ts",
     "postinstall": "cd client && npm install",
     "check-master": "git checkout master && npm install && htmlhint \"**/*.html\""
   },
