@@ -2,24 +2,7 @@ import React from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Square, Activity, Wifi, Smartphone, Monitor, MessageCircle } from 'lucide-react';
 import clsx from 'clsx';
-
-type Platform = 'whatsapp' | 'signal';
-
-interface TrackerData {
-    rtt: number;
-    avg: number;
-    median: number;
-    threshold: number;
-    state: string;
-    timestamp: number;
-}
-
-interface DeviceInfo {
-    jid: string;
-    state: string;
-    rtt: number;
-    avg: number;
-}
+import { type Platform, type TrackerData, type DeviceInfo } from '../types';
 
 interface ContactCardProps {
     jid: string;
@@ -186,7 +169,7 @@ export function ContactCard({
                                     <XAxis dataKey="timestamp" hide />
                                     <YAxis domain={['auto', 'auto']} />
                                     <Tooltip
-                                        labelFormatter={(t: number) => new Date(t).toLocaleTimeString()}
+                                        labelFormatter={(t) => new Date(Number(t)).toLocaleTimeString()}
                                         contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                                     />
                                     <Line type="monotone" dataKey="avg" stroke="#3b82f6" strokeWidth={2} dot={false} name="Avg RTT" isAnimationActive={false} />

@@ -1,41 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import {Eye, EyeOff, Plus, Trash2, Zap, MessageCircle, Settings} from 'lucide-react';
-import { socket, Platform, ConnectionState } from '../App';
+import { socket } from '../App';
+import { type Platform, type ConnectionState, type ProbeMethod, type TrackerData, type DeviceInfo, type ContactInfo } from '../types';
 import { ContactCard } from './ContactCard';
 import { Login } from './Login';
 
-type ProbeMethod = 'delete' | 'reaction';
-
 interface DashboardProps {
     connectionState: ConnectionState;
-}
-
-interface TrackerData {
-    rtt: number;
-    avg: number;
-    median: number;
-    threshold: number;
-    state: string;
-    timestamp: number;
-}
-
-interface DeviceInfo {
-    jid: string;
-    state: string;
-    rtt: number;
-    avg: number;
-}
-
-interface ContactInfo {
-    jid: string;
-    displayNumber: string;
-    contactName: string;
-    data: TrackerData[];
-    devices: DeviceInfo[];
-    deviceCount: number;
-    presence: string | null;
-    profilePic: string | null;
-    platform: Platform;
 }
 
 export function Dashboard({ connectionState }: DashboardProps) {
