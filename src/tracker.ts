@@ -1,83 +1,30 @@
 import '@whiskeysockets/baileys';
-import { WASocket, proto, jidNormalizedUser } from '@whiskeysockets/baileys';
+import { WASocket, proto } from '@whiskeysockets/baileys';
 import { pino } from 'pino';
+import { TrackerLogger } from './shared/logger.js';
+import {
+    type ProbeMethod,
+    type DeviceMetrics,
+} from './shared/types.js';
+import {
+    MAX_VALID_RTT,
+    MAX_RTT_HISTORY,
+    calculateMedian,
+    calculateMovingAverage,
+    addRttMeasurement,
+    createDeviceMetrics,
+    THRESHOLD_MULTIPLIER,
+    MIN_MEASUREMENTS_FOR_STATE,
+} from './shared/metrics.js';
+
+export type { ProbeMethod } from './shared/types.js';
 
 // Suppress Baileys debug output (Closing session spam)
 const logger = pino({
     level: process.argv.includes('--debug') ? 'debug' : 'silent'
 });
 
-/**
- * Probe method types
- * - 'delete': Silent delete probe (sends delete request for non-existent message) - DEFAULT
- * - 'reaction': Reaction probe (sends reaction to non-existent message)
- */
-export type ProbeMethod = 'delete' | 'reaction';
-
-/**
- * Logger utility for debug and normal mode
- */
-class TrackerLogger {
-    private isDebugMode: boolean;
-
-    constructor(debugMode: boolean = false) {
-        this.isDebugMode = debugMode;
-    }
-
-    setDebugMode(enabled: boolean) {
-        this.isDebugMode = enabled;
-    }
-
-    debug(...args: any[]) {
-        if (this.isDebugMode) {
-            console.log(...args);
-        }
-    }
-
-    info(...args: any[]) {
-        console.log(...args);
-    }
-
-    formatDeviceState(jid: string, rtt: number, avgRtt: number, median: number, threshold: number, state: string) {
-        const stateColor = state === 'Online' ? '🟢' : state === 'Standby' ? '🟡' : state === 'OFFLINE' ? '🔴' : '⚪';
-        const timestamp = new Date().toLocaleTimeString('de-DE');
-
-        // Box width is 64 characters, inner content is 62 characters (excluding ║ on both sides)
-        const boxWidth = 62;
-
-        const header = `${stateColor} Device Status Update - ${timestamp}`;
-        const jidLine = `JID:        ${jid}`;
-        const statusLine = `Status:     ${state}`;
-        const rttLine = `RTT:        ${rtt}ms`;
-        const avgLine = `Avg (3):    ${avgRtt.toFixed(0)}ms`;
-        const medianLine = `Median:     ${median.toFixed(0)}ms`;
-        const thresholdLine = `Threshold:  ${threshold.toFixed(0)}ms`;
-
-        console.log(`\n╔════════════════════════════════════════════════════════════════╗`);
-        console.log(`║ ${header.padEnd(boxWidth)} ║`);
-        console.log(`╠════════════════════════════════════════════════════════════════╣`);
-        console.log(`║ ${jidLine.padEnd(boxWidth)} ║`);
-        console.log(`║ ${statusLine.padEnd(boxWidth)} ║`);
-        console.log(`║ ${rttLine.padEnd(boxWidth)} ║`);
-        console.log(`║ ${avgLine.padEnd(boxWidth)} ║`);
-        console.log(`║ ${medianLine.padEnd(boxWidth)} ║`);
-        console.log(`║ ${thresholdLine.padEnd(boxWidth)} ║`);
-        console.log(`╚════════════════════════════════════════════════════════════════╝\n`);
-    }
-}
-
 const trackerLogger = new TrackerLogger();
-
-/**
- * Metrics tracked per device for activity monitoring
- */
-interface DeviceMetrics {
-    rttHistory: number[];      // Historical RTT measurements (up to 2000)
-    recentRtts: number[];      // Recent RTTs for moving average (last 3)
-    state: string;             // Current device state (Online/Standby/Calibrating/Offline)
-    lastRtt: number;           // Most recent RTT measurement
-    lastUpdate: number;        // Timestamp of last update
-}
 
 /**
  * WhatsAppTracker - Monitors messaging app user activity using RTT-based analysis
@@ -425,15 +372,8 @@ export class WhatsAppTracker {
      * @param timeout Time elapsed before timeout
      */
     private markDeviceOffline(jid: string, timeout: number) {
-        // Initialize device metrics if not exists
         if (!this.deviceMetrics.has(jid)) {
-            this.deviceMetrics.set(jid, {
-                rttHistory: [],
-                recentRtts: [],
-                state: 'OFFLINE',
-                lastRtt: timeout,
-                lastUpdate: Date.now()
-            });
+            this.deviceMetrics.set(jid, createDeviceMetrics(timeout, 'OFFLINE'));
         } else {
             const metrics = this.deviceMetrics.get(jid)!;
             metrics.state = 'OFFLINE';
@@ -451,46 +391,23 @@ export class WhatsAppTracker {
      * @param rtt Round-trip time in milliseconds
      */
     private addMeasurementForDevice(jid: string, rtt: number) {
-        // Initialize device metrics if not exists
         if (!this.deviceMetrics.has(jid)) {
-            this.deviceMetrics.set(jid, {
-                rttHistory: [],
-                recentRtts: [],
-                state: 'Calibrating...',
-                lastRtt: rtt,
-                lastUpdate: Date.now()
-            });
+            this.deviceMetrics.set(jid, createDeviceMetrics(rtt));
         }
 
         const metrics = this.deviceMetrics.get(jid)!;
 
-        // Only add measurements if we actually received a CLIENT ACK (rtt <= 5000ms)
-        if (rtt <= 5000) {
-            // 1. Add to device's recent RTTs for moving average (last 3)
-            metrics.recentRtts.push(rtt);
-            if (metrics.recentRtts.length > 3) {
-                metrics.recentRtts.shift();
-            }
-
-            // 2. Add to device's history for calibration (last 2000), filtering outliers > 5000ms
-            metrics.rttHistory.push(rtt);
-            if (metrics.rttHistory.length > 2000) {
-                metrics.rttHistory.shift();
-            }
-
-            // 3. Add to global history for global threshold calculation
+        if (addRttMeasurement(metrics, rtt)) {
+            // Also add to global history for threshold calculation
             this.globalRttHistory.push(rtt);
-            if (this.globalRttHistory.length > 2000) {
+            if (this.globalRttHistory.length > MAX_RTT_HISTORY) {
                 this.globalRttHistory.shift();
             }
-
-            metrics.lastRtt = rtt;
-            metrics.lastUpdate = Date.now();
 
             // Determine new state based on RTT
             this.determineDeviceState(jid);
         }
-        // If rtt > 5000ms, it means timeout - device is already marked as OFFLINE by markDeviceOffline()
+        // If rtt > MAX_VALID_RTT, it means timeout - device is already marked as OFFLINE by markDeviceOffline()
 
         this.sendUpdate();
     }
@@ -503,47 +420,30 @@ export class WhatsAppTracker {
         const metrics = this.deviceMetrics.get(jid);
         if (!metrics) return;
 
-        // If device is marked as OFFLINE (no CLIENT ACK received), keep that state
-        // Only change back to Online/Standby if we receive new measurements
         if (metrics.state === 'OFFLINE') {
-            // Check if this is a new measurement (device came back online)
-            if (metrics.lastRtt <= 5000 && metrics.recentRtts.length > 0) {
+            if (metrics.lastRtt <= MAX_VALID_RTT && metrics.recentRtts.length > 0) {
                 trackerLogger.debug(`[DEVICE ${jid}] Device came back online (RTT: ${metrics.lastRtt}ms)`);
-                // Continue with normal state determination below
             } else {
                 trackerLogger.debug(`[DEVICE ${jid}] Maintaining OFFLINE state`);
                 return;
             }
         }
 
-        // Calculate device's moving average
-        const movingAvg = metrics.recentRtts.reduce((a: number, b: number) => a + b, 0) / metrics.recentRtts.length;
+        const movingAvg = calculateMovingAverage(metrics.recentRtts);
 
-        // Calculate global median and threshold
         let median = 0;
         let threshold = 0;
 
-        if (this.globalRttHistory.length >= 3) {
-            const sorted = [...this.globalRttHistory].sort((a, b) => a - b);
-            const mid = Math.floor(sorted.length / 2);
-            median = sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+        if (this.globalRttHistory.length >= MIN_MEASUREMENTS_FOR_STATE) {
+            median = calculateMedian(this.globalRttHistory);
+            threshold = median * THRESHOLD_MULTIPLIER;
 
-
-            threshold = median * 0.9;
-
-            if (movingAvg < threshold) {
-                metrics.state = 'Online';
-            } else {
-                metrics.state = 'Standby';
-            }
+            metrics.state = movingAvg < threshold ? 'Online' : 'Standby';
         } else {
             metrics.state = 'Calibrating...';
         }
 
-        // Normal mode: Formatted output
         trackerLogger.formatDeviceState(jid, metrics.lastRtt, movingAvg, median, threshold, metrics.state);
-
-        // Debug mode: Additional debug information
         trackerLogger.debug(`[DEBUG] RTT History length: ${metrics.rttHistory.length}, Global History: ${this.globalRttHistory.length}`);
     }
 
@@ -551,19 +451,15 @@ export class WhatsAppTracker {
      * Send update to client with current tracking data
      */
     private sendUpdate() {
-        // Build devices array
         const devices = Array.from(this.deviceMetrics.entries()).map(([jid, metrics]) => ({
             jid,
             state: metrics.state,
             rtt: metrics.lastRtt,
-            avg: metrics.recentRtts.length > 0
-                ? metrics.recentRtts.reduce((a: number, b: number) => a + b, 0) / metrics.recentRtts.length
-                : 0
+            avg: calculateMovingAverage(metrics.recentRtts)
         }));
 
-        // Calculate global stats for backward compatibility
-        const globalMedian = this.calculateGlobalMedian();
-        const globalThreshold = globalMedian * 0.9;
+        const globalMedian = calculateMedian(this.globalRttHistory);
+        const globalThreshold = globalMedian * THRESHOLD_MULTIPLIER;
 
         const data = {
             devices,
@@ -577,18 +473,6 @@ export class WhatsAppTracker {
         if (this.onUpdate) {
             this.onUpdate(data);
         }
-    }
-
-    /**
-     * Calculate global median RTT across all measurements
-     * @returns Median RTT value
-     */
-    private calculateGlobalMedian(): number {
-        if (this.globalRttHistory.length < 3) return 0;
-
-        const sorted = [...this.globalRttHistory].sort((a, b) => a - b);
-        const mid = Math.floor(sorted.length / 2);
-        return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
     }
 
     /**

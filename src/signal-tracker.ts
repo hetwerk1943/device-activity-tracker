@@ -6,16 +6,20 @@
  */
 
 import WebSocket from 'ws';
+import { TrackerLogger } from './shared/logger.js';
+import { type DeviceMetrics } from './shared/types.js';
+import {
+    MAX_VALID_RTT,
+    MAX_RTT_HISTORY,
+    calculateMedian,
+    calculateMovingAverage,
+    addRttMeasurement,
+    createDeviceMetrics,
+    THRESHOLD_MULTIPLIER,
+    MIN_MEASUREMENTS_FOR_STATE,
+} from './shared/metrics.js';
 
 export type ProbeMethod = 'reaction' | 'message';
-
-interface DeviceMetrics {
-    rttHistory: number[];
-    recentRtts: number[];
-    state: string;
-    lastRtt: number;
-    lastUpdate: number;
-}
 
 // JSON-RPC message format for receipts
 interface JsonRpcMessage {
@@ -36,29 +40,7 @@ interface JsonRpcMessage {
     };
 }
 
-class TrackerLogger {
-    private isDebugMode: boolean;
-
-    constructor(debugMode: boolean = false) {
-        this.isDebugMode = debugMode;
-    }
-
-    setDebugMode(enabled: boolean) {
-        this.isDebugMode = enabled;
-    }
-
-    debug(...args: any[]) {
-        if (this.isDebugMode) {
-            console.log('[SIGNAL]', ...args);
-        }
-    }
-
-    info(...args: any[]) {
-        console.log('[SIGNAL]', ...args);
-    }
-}
-
-const logger = new TrackerLogger(true);
+const logger = new TrackerLogger(true, '[SIGNAL]');
 
 export class SignalTracker {
     private apiUrl: string;
@@ -337,13 +319,7 @@ export class SignalTracker {
 
     private markDeviceOffline(identifier: string, timeout: number) {
         if (!this.deviceMetrics.has(identifier)) {
-            this.deviceMetrics.set(identifier, {
-                rttHistory: [],
-                recentRtts: [],
-                state: 'OFFLINE',
-                lastRtt: timeout,
-                lastUpdate: Date.now()
-            });
+            this.deviceMetrics.set(identifier, createDeviceMetrics(timeout, 'OFFLINE'));
         } else {
             const metrics = this.deviceMetrics.get(identifier)!;
             metrics.state = 'OFFLINE';
@@ -357,35 +333,16 @@ export class SignalTracker {
 
     private addMeasurementForDevice(identifier: string, rtt: number) {
         if (!this.deviceMetrics.has(identifier)) {
-            this.deviceMetrics.set(identifier, {
-                rttHistory: [],
-                recentRtts: [],
-                state: 'Calibrating...',
-                lastRtt: rtt,
-                lastUpdate: Date.now()
-            });
+            this.deviceMetrics.set(identifier, createDeviceMetrics(rtt));
         }
 
         const metrics = this.deviceMetrics.get(identifier)!;
 
-        if (rtt <= 5000) {
-            metrics.recentRtts.push(rtt);
-            if (metrics.recentRtts.length > 3) {
-                metrics.recentRtts.shift();
-            }
-
-            metrics.rttHistory.push(rtt);
-            if (metrics.rttHistory.length > 2000) {
-                metrics.rttHistory.shift();
-            }
-
+        if (addRttMeasurement(metrics, rtt)) {
             this.globalRttHistory.push(rtt);
-            if (this.globalRttHistory.length > 2000) {
+            if (this.globalRttHistory.length > MAX_RTT_HISTORY) {
                 this.globalRttHistory.shift();
             }
-
-            metrics.lastRtt = rtt;
-            metrics.lastUpdate = Date.now();
 
             this.determineDeviceState(identifier);
         }
@@ -398,29 +355,20 @@ export class SignalTracker {
         if (!metrics) return;
 
         if (metrics.state === 'OFFLINE') {
-            if (metrics.lastRtt <= 5000 && metrics.recentRtts.length > 0) {
+            if (metrics.lastRtt <= MAX_VALID_RTT && metrics.recentRtts.length > 0) {
                 logger.debug(`Device ${identifier} came back online (RTT: ${metrics.lastRtt}ms)`);
             } else {
                 return;
             }
         }
 
-        const movingAvg = metrics.recentRtts.reduce((a, b) => a + b, 0) / metrics.recentRtts.length;
+        const movingAvg = calculateMovingAverage(metrics.recentRtts);
 
-        let median = 0;
-        let threshold = 0;
+        if (this.globalRttHistory.length >= MIN_MEASUREMENTS_FOR_STATE) {
+            const median = calculateMedian(this.globalRttHistory);
+            const threshold = median * THRESHOLD_MULTIPLIER;
 
-        if (this.globalRttHistory.length >= 3) {
-            const sorted = [...this.globalRttHistory].sort((a, b) => a - b);
-            const mid = Math.floor(sorted.length / 2);
-            median = sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-            threshold = median * 0.9;
-
-            if (movingAvg < threshold) {
-                metrics.state = 'Online';
-            } else {
-                metrics.state = 'Standby';
-            }
+            metrics.state = movingAvg < threshold ? 'Online' : 'Standby';
         } else {
             metrics.state = 'Calibrating...';
         }
@@ -434,13 +382,11 @@ export class SignalTracker {
             jid: id,
             state: metrics.state,
             rtt: metrics.lastRtt,
-            avg: metrics.recentRtts.length > 0
-                ? metrics.recentRtts.reduce((a, b) => a + b, 0) / metrics.recentRtts.length
-                : 0
+            avg: calculateMovingAverage(metrics.recentRtts)
         }));
 
-        const globalMedian = this.calculateGlobalMedian();
-        const globalThreshold = globalMedian * 0.9;
+        const globalMedian = calculateMedian(this.globalRttHistory);
+        const globalThreshold = globalMedian * THRESHOLD_MULTIPLIER;
 
         const data = {
             devices,
@@ -453,14 +399,6 @@ export class SignalTracker {
         if (this.onUpdate) {
             this.onUpdate(data);
         }
-    }
-
-    private calculateGlobalMedian(): number {
-        if (this.globalRttHistory.length < 3) return 0;
-
-        const sorted = [...this.globalRttHistory].sort((a, b) => a - b);
-        const mid = Math.floor(sorted.length / 2);
-        return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
     }
 
     /**
@@ -508,13 +446,6 @@ export async function getSignalAccounts(apiUrl: string): Promise<string[]> {
         console.error('[SIGNAL] Failed to get accounts:', err);
     }
     return [];
-}
-
-/**
- * Get QR code link URL for device linking
- */
-export function getSignalQrLinkUrl(apiUrl: string, deviceName: string = 'activity-tracker'): string {
-    return `${apiUrl}/v1/qrcodelink?device_name=${encodeURIComponent(deviceName)}`;
 }
 
 /**

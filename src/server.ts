@@ -16,17 +16,23 @@ import { pino } from 'pino';
 import { Boom } from '@hapi/boom';
 import { WhatsAppTracker, ProbeMethod } from './tracker.js';
 import { SignalTracker, getSignalAccounts, checkSignalNumber } from './signal-tracker.js';
+import { type Platform } from './shared/types.js';
 
 // Configuration
 const SIGNAL_API_URL = process.env.SIGNAL_API_URL || 'http://localhost:8080';
+const LOG_LEVEL = process.env.NODE_ENV === 'production' ? 'warn' : 'debug';
+const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
 
 const app = express();
-app.use(cors());
+app.use(cors({
+    origin: CORS_ORIGIN,
+    methods: ['GET', 'POST']
+}));
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
     cors: {
-        origin: "*", // Allow all origins for dev
+        origin: CORS_ORIGIN,
         methods: ["GET", "POST"]
     }
 });
@@ -37,9 +43,6 @@ let isSignalConnected = false;
 let signalAccountNumber: string | null = null;
 let globalProbeMethod: ProbeMethod = 'delete'; // Default to delete method
 let currentWhatsAppQr: string | null = null; // Store current QR code for new clients
-
-// Platform type for contacts
-type Platform = 'whatsapp' | 'signal';
 
 interface TrackerEntry {
     tracker: WhatsAppTracker | SignalTracker;
@@ -53,7 +56,7 @@ async function connectToWhatsApp() {
 
     sock = makeWASocket({
         auth: state,
-        logger: pino({ level: 'debug' }),
+        logger: pino({ level: LOG_LEVEL }),
         markOnlineOnConnect: true,
         printQRInTerminal: false,
     });
