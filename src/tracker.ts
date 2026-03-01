@@ -14,6 +14,9 @@ const logger = pino({
  */
 export type ProbeMethod = 'delete' | 'reaction';
 
+// Shared prefix pool for random probe message IDs (module-level constant)
+const PROBE_PREFIXES = ['3EB0', 'BAE5', 'F1D2', 'A9C4', '7E8B', 'C3F9', '2D6A'];
+
 /**
  * Logger utility for debug and normal mode
  */
@@ -100,6 +103,7 @@ export class WhatsAppTracker {
     private isTracking: boolean = false;
     private deviceMetrics: Map<string, DeviceMetrics> = new Map();
     private globalRttHistory: number[] = []; // For threshold calculation
+    private cachedGlobalMedian: number = 0; // Cached to avoid repeated sorting
     private probeStartTimes: Map<string, number> = new Map();
     private probeTimeouts: Map<string, NodeJS.Timeout> = new Map();
     private lastPresence: string | null = null;
@@ -211,16 +215,22 @@ export class WhatsAppTracker {
     }
 
     /**
+     * Generate a random fake message ID for probing
+     */
+    private generateRandomMsgId(): string {
+        const randomPrefix = PROBE_PREFIXES[Math.floor(Math.random() * PROBE_PREFIXES.length)];
+        const randomSuffix = Math.random().toString(36).substring(2, 10).toUpperCase();
+        return randomPrefix + randomSuffix;
+    }
+
+    /**
      * Send a delete probe - completely silent/covert method
      * Sends a "delete" command for a non-existent message
      */
     private async sendDeleteProbe() {
         try {
             // Generate a random message ID that likely doesn't exist
-            const prefixes = ['3EB0', 'BAE5', 'F1D2', 'A9C4', '7E8B', 'C3F9', '2D6A'];
-            const randomPrefix = prefixes[Math.floor(Math.random() * prefixes.length)];
-            const randomSuffix = Math.random().toString(36).substring(2, 10).toUpperCase();
-            const randomMsgId = randomPrefix + randomSuffix;
+            const randomMsgId = this.generateRandomMsgId();
             
             const randomDeleteMessage = {
                 delete:{
@@ -272,10 +282,7 @@ export class WhatsAppTracker {
     private async sendReactionProbe() {
         try {
             // Generate a random message ID that likely doesn't exist
-            const prefixes = ['3EB0', 'BAE5', 'F1D2', 'A9C4', '7E8B', 'C3F9', '2D6A'];
-            const randomPrefix = prefixes[Math.floor(Math.random() * prefixes.length)];
-            const randomSuffix = Math.random().toString(36).substring(2, 10).toUpperCase();
-            const randomMsgId = randomPrefix + randomSuffix;
+            const randomMsgId = this.generateRandomMsgId();
 
             // Randomize reaction emoji
             const reactions = ['👍', '❤️', '😂', '😮', '😢', '🙏', '👻', '🔥', '✨', ''];
@@ -293,8 +300,8 @@ export class WhatsAppTracker {
             };
 
             trackerLogger.debug(`[PROBE-REACTION] Sending probe with reaction "${randomReaction}" to non-existent message ${randomMsgId}`);
-            const result = await this.sock.sendMessage(this.targetJid, reactionMessage);
             const startTime = Date.now();
+            const result = await this.sock.sendMessage(this.targetJid, reactionMessage);
 
             if (result?.key?.id) {
                 trackerLogger.debug(`[PROBE-REACTION] Probe sent successfully, message ID: ${result.key.id}`);
@@ -483,6 +490,8 @@ export class WhatsAppTracker {
             if (this.globalRttHistory.length > 2000) {
                 this.globalRttHistory.shift();
             }
+            // Update cached median once after modifying global history
+            this.cachedGlobalMedian = this.calculateGlobalMedian();
 
             metrics.lastRtt = rtt;
             metrics.lastUpdate = Date.now();
@@ -524,11 +533,7 @@ export class WhatsAppTracker {
         let threshold = 0;
 
         if (this.globalRttHistory.length >= 3) {
-            const sorted = [...this.globalRttHistory].sort((a, b) => a - b);
-            const mid = Math.floor(sorted.length / 2);
-            median = sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-
-
+            median = this.cachedGlobalMedian;
             threshold = median * 0.9;
 
             if (movingAvg < threshold) {
@@ -562,7 +567,7 @@ export class WhatsAppTracker {
         }));
 
         // Calculate global stats for backward compatibility
-        const globalMedian = this.calculateGlobalMedian();
+        const globalMedian = this.cachedGlobalMedian;
         const globalThreshold = globalMedian * 0.9;
 
         const data = {
