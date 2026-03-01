@@ -6,9 +6,20 @@
   <img src="https://img.shields.io/badge/TypeScript-5.0+-3178C6?style=flat&logo=typescript&logoColor=white" alt="TypeScript"/>
   <img src="https://img.shields.io/badge/React-18+-61DAFB?style=flat&logo=react&logoColor=black" alt="React"/>
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License MIT"/>
+  <img src="https://img.shields.io/badge/Project%20Stage-Proof%20of%20Concept-orange?style=flat" alt="Project Stage: Proof of Concept"/>
 </p>
 
 > ⚠️ **DISCLAIMER**: Proof-of-concept for educational and security research purposes only. Demonstrates privacy vulnerabilities in WhatsApp and Signal.
+
+## Project Stage
+
+This project is currently in the **Proof of Concept** stage. It was created for educational and security research purposes to demonstrate privacy vulnerabilities in mobile instant messengers. It is not intended for production use.
+
+| Stage | Description |
+|-------|-------------|
+| ✅ Proof of Concept | Core RTT-based device activity detection is implemented and functional |
+| 🔲 Research Prototype | Expanded platform support and improved detection accuracy |
+| 🔲 Production | Not planned — this tool is for research only |
 
 ## Overview
 
