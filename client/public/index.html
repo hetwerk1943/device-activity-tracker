@@ -7,7 +7,7 @@
     <meta name="theme-color" content="#000000" />
     <meta
       name="description"
-      content="Web site created using create-react-app"
+      content="Device Activity Tracker – a proof-of-concept privacy research tool for RTT-based activity analysis on WhatsApp and Signal."
     />
     <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
     <!--
@@ -24,7 +24,25 @@
       work correctly both with client-side routing and a non-root public URL.
       Learn how to configure a non-root public URL by running `npm run build`.
     -->
-    <title>React App</title>
+    <title>Device Activity Tracker</title>
+    <!--
+      AdSense placeholder – replace ca-pub-XXXXXXXXXXXXXXXX with your publisher ID.
+      The script is only injected at runtime when window.ADS_ENABLED === true.
+      See src/adsConfig.ts for the ON/OFF toggle.
+    -->
+    <script>
+      /* AdSense ON/OFF control – set to false to disable all ads */
+      window.ADS_ENABLED = false;
+      /* AdSense publisher ID placeholder – replace before going live */
+      window.ADS_CLIENT = 'ca-pub-XXXXXXXXXXXXXXXX';
+      if (window.ADS_ENABLED && window.ADS_CLIENT !== 'ca-pub-XXXXXXXXXXXXXXXX') {
+        var s = document.createElement('script');
+        s.async = true;
+        s.crossOrigin = 'anonymous';
+        s.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=' + window.ADS_CLIENT;
+        document.head.appendChild(s);
+      }
+    </script>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
