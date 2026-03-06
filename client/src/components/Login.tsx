@@ -1,6 +1,6 @@
 import React from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { ConnectionState } from '../App';
+import { type ConnectionState } from '../types';
 import { CheckCircle } from 'lucide-react';
 
 interface LoginProps {

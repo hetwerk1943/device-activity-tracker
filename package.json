@@ -32,6 +32,7 @@
     "start:signal-api": "npx tsx src/scripts/init-signal.ts",
     "start:client": "cd client && npm start",
     "dev": "npm run start:server",
+    "test": "node --import tsx --test src/__tests__/*.test.ts",
     "postinstall": "cd client && npm install",
     "check-master": "git checkout master && npm install && htmlhint \"**/*.html\""
   },
@@ -39,7 +40,6 @@
     "@whiskeysockets/baileys": "^7.0.0-rc.9",
     "cors": "^2.8.5",
     "express": "^5.0.1",
-    "pdf-parse": "^1.1.1",
     "pino": "^10.1.0",
     "qrcode-terminal": "^0.12.0",
     "socket.io": "^4.8.1",
